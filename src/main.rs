@@ -24,11 +24,8 @@ use dns_lookup::lookup_host;
 use std::io::prelude::*;
 
 
-/// App holds the state of the application
 struct App {
-    /// Current value of the input box
     input: Input,
-    /// History of recorded messages
     messages: Vec<String>
 }
 
@@ -36,14 +33,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
     let ips = lookup_host("reality.iky.su").expect("Ошибка DNS (клиент)");
     if ips.len()>0 {
-
         //socket
         let mut stream = TcpStream::connect(format!("{}:26537", ips[0])).expect("Bad connect");
         stream.set_nonblocking(true).expect("set_nonblocking call failed");
         if args.len() == 2 {
-            stream.write_all(format!("/setname {}",args[1]).as_bytes()).expect("Ник не установлен :(");
+            stream.write_all(format!("/name {}",args[1]).as_bytes()).expect("Ник не установлен :(");
         }
-
 
         // setup terminal
         enable_raw_mode()?;
@@ -83,14 +78,10 @@ fn run_app<B: Backend>(
     mut app: App,
     mut stream: TcpStream
 ) -> io::Result<()> {
-
-    //let mut incoming = listener.incoming();
-
     let mut buf = [0;512];
-    
     loop{
         terminal.draw(|f| ui(f, &mut app)).unwrap();
-        if poll(Duration::from_millis(1000))? {
+        if poll(Duration::from_millis(0))? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Enter => {
@@ -127,9 +118,12 @@ fn run_app<B: Backend>(
                 }
                 buf.iter_mut().for_each(|x| *x = 0);
             },
-            Err(_)=>{}
+            Err(e)=>{
+                if e.kind() != io::ErrorKind::WouldBlock {
+                    app.messages.push(format!("{:?}", e));
+                }
+            }
         };
-        
     }
     
 }
@@ -176,7 +170,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let help_message = Paragraph::new(text).block(Block::default().borders(Borders::BOTTOM));
     f.render_widget(help_message, chunks[0]);
 
-    let width = chunks[0].width.max(3) - 3; // keep 2 for borders and 1 for cursor
+    let width = chunks[0].width.max(3) - 3;
     let scroll = (app.input.cursor() as u16).max(width) - width;
     let input = Paragraph::new(app.input.value())
         .scroll((0, scroll))
@@ -191,9 +185,6 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     if app.messages.len()>chunks[1].height.into() {
         let n_us: usize = chunks[1].height as usize;
-        //let help_msg = &app.messages[(app.messages.len()-n_us)..];
-        //let help_message = Paragraph::new(format!("new {:?}", help_msg));
-        //f.render_widget(help_message, chunks[1]);
         messages = app.messages[(app.messages.len()-n_us)..].into();
     }else{
         messages = app.messages[..].into()
